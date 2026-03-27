@@ -85,6 +85,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_parser_cmd.set_defaults(func=cmd_build_dataset)
 
+    # build-excel-dataset command
+    build_excel_parser = subparsers.add_parser(
+        "build-excel-dataset",
+        help="Build normalized dashboard dataset from Excel workbook",
+    )
+    build_excel_parser.add_argument(
+        "--input",
+        default="data/CANDLE_ Survey for Member States on National Cancer Data Node Plans(1-17).xlsx",
+        help="Path to source Excel workbook",
+    )
+    build_excel_parser.add_argument(
+        "--output-dir",
+        default="data/normalized",
+        help="Directory for normalized parquet outputs",
+    )
+    build_excel_parser.set_defaults(func=cmd_build_excel_dataset)
+
     return parser
 
 
@@ -175,5 +192,21 @@ def cmd_build_dataset(args: argparse.Namespace) -> int:
     print(f"Writing to {args.output}...")
     # Note: This is simplified - in production, merge properly with data_source flags
     responses_to_parquet(all_responses, args.output, data_source="mixed")
+    print("Done!")
+    return 0
+
+
+def cmd_build_excel_dataset(args: argparse.Namespace) -> int:
+    """Build normalized dashboard dataset from source Excel workbook."""
+    from ms_survey.extraction import parse_excel_workbook, write_normalized_parquet
+
+    print(f"Parsing workbook: {args.input}")
+    parsed = parse_excel_workbook(args.input)
+    print(
+        f"Parsed {len(parsed.respondents)} respondents, "
+        f"{len(parsed.questions)} questions, {len(parsed.answers)} answers"
+    )
+    print(f"Writing normalized dataset to: {args.output_dir}")
+    write_normalized_parquet(parsed, args.output_dir)
     print("Done!")
     return 0

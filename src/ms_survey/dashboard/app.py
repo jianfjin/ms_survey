@@ -12,12 +12,11 @@ src_path = Path(__file__).parent.parent
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from ms_survey.analytics import AnalyticsEngine
-from ms_survey.dashboard.components.filters import render_sidebar_filters
-from ms_survey.dashboard.pages.overview import render_overview
+from ms_survey.dashboard.pages.section_heatmap import render_section_heatmap
 from ms_survey.dashboard.pages.section_view import render_section_view
 from ms_survey.dashboard.pages.question_view import render_question_view
 from ms_survey.dashboard.pages.comparison import render_comparison
+from ms_survey.dashboard.runtime import load_dashboard_context
 
 
 # Page configuration
@@ -34,27 +33,10 @@ def main() -> None:
     st.title("📊 MS Survey Analytics Dashboard")
     st.caption("Analyze and compare survey responses across countries")
 
-    # Initialize analytics engine
-    parquet_path = st.sidebar.text_input(
-        "Data File",
-        value="data/synthetic_responses.parquet",
-        help="Path to the Parquet file with survey responses",
-    )
-
-    # Check if file exists
-    if not Path(parquet_path).exists():
-        st.error(f"Data file not found: {parquet_path}")
-        st.info("Run `ms-survey generate-synthetic` to create sample data.")
+    context = load_dashboard_context()
+    if context is None:
         return
-
-    try:
-        engine = AnalyticsEngine(parquet_path)
-    except Exception as e:
-        st.error(f"Error loading data: {e}")
-        return
-
-    # Render sidebar filters
-    filters = render_sidebar_filters(engine)
+    engine, filters = context
 
     # Navigation
     st.sidebar.markdown("---")
@@ -63,7 +45,7 @@ def main() -> None:
     page = st.sidebar.radio(
         "Select Page",
         options=[
-            "Overview",
+            "Section Heatmap",
             "Section View",
             "Question View",
             "Country Comparison",
@@ -71,8 +53,8 @@ def main() -> None:
     )
 
     # Render selected page
-    if page == "Overview":
-        render_overview(engine, filters)
+    if page == "Section Heatmap":
+        render_section_heatmap(engine, filters)
     elif page == "Section View":
         render_section_view(engine, filters)
     elif page == "Question View":
