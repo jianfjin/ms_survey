@@ -35,3 +35,9 @@ def test_cli_has_build_excel_dataset_command() -> None:
     parser = build_parser()
     help_text = parser.format_help()
     assert "build-excel-dataset" in help_text
+
+
+def test_cli_has_export_static_dashboard_command() -> None:
+    parser = build_parser()
+    help_text = parser.format_help()
+    assert "export-static-dashboard" in help_text

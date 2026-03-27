@@ -18,8 +18,19 @@ This command creates:
 uv run streamlit run src/ms_survey/dashboard/app.py
 ```
 
+### Export single-file offline HTML dashboard
+
+```bash
+uv run ms-survey export-static-dashboard --dataset-dir data/normalized --output dist/dashboard.html
+```
+
+This command generates one distributable file:
+- `dist/dashboard.html`
+
+End users can open that file directly in a browser without installing Python, running Streamlit, or internet access.
+
 ### Privacy behavior
 
 - Respondent name and email are excluded from normalized outputs.
 - Open-text answers are masked in Balanced mode (email/phone/person-like names redacted).
-- Dashboard visualizations are aggregate-only and country labels are ISO code only.
+- Streamlit dashboard uses ISO country labels.

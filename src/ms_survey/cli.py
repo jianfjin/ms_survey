@@ -102,6 +102,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_excel_parser.set_defaults(func=cmd_build_excel_dataset)
 
+    # export-static-dashboard command
+    export_static_parser = subparsers.add_parser(
+        "export-static-dashboard",
+        help="Export single-file offline HTML dashboard from normalized dataset",
+    )
+    export_static_parser.add_argument(
+        "--dataset-dir",
+        default="data/normalized",
+        help="Directory containing normalized parquet dataset",
+    )
+    export_static_parser.add_argument(
+        "--output",
+        default="dist/dashboard.html",
+        help="Output HTML file path",
+    )
+    export_static_parser.add_argument(
+        "--max-payload-bytes",
+        type=int,
+        default=25 * 1024 * 1024,
+        help="Warning threshold for embedded payload size",
+    )
+    export_static_parser.set_defaults(func=cmd_export_static_dashboard)
+
     return parser
 
 
@@ -209,4 +232,23 @@ def cmd_build_excel_dataset(args: argparse.Namespace) -> int:
     print(f"Writing normalized dataset to: {args.output_dir}")
     write_normalized_parquet(parsed, args.output_dir)
     print("Done!")
+    return 0
+
+
+def cmd_export_static_dashboard(args: argparse.Namespace) -> int:
+    """Export single-file static dashboard from normalized dataset."""
+    from ms_survey.static_export import export_static_dashboard_html
+
+    print(f"Exporting static dashboard from: {args.dataset_dir}")
+    result = export_static_dashboard_html(
+        dataset_dir=args.dataset_dir,
+        output_path=args.output,
+        max_payload_bytes=args.max_payload_bytes,
+    )
+    print(f"Wrote: {result['output_path']}")
+    print(f"Encoded payload size: {result['size_bytes']} bytes")
+    if result["warnings"]:
+        print("Warnings:")
+        for warning in result["warnings"]:
+            print(f" - {warning}")
     return 0
