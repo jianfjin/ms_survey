@@ -1,137 +1,96 @@
-"""Comparison page for cross-country analysis."""
+"""Cross-country comparison page."""
 
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
 
-from ms_survey.analytics import AnalyticsEngine, FilterCriteria
+from ms_survey.analytics import FilterCriteria, NormalizedAnalyticsEngine
 from ms_survey.dashboard.components.charts import render_bar_chart
-from ms_survey.definition.seed_ncdn_v1 import load_ncdn_v1
+from ms_survey.dashboard.runtime import load_dashboard_context
 
 
-def render_comparison(engine: AnalyticsEngine, filters: FilterCriteria) -> None:
-    """Render the country comparison page.
+def render_comparison(
+    engine: NormalizedAnalyticsEngine,
+    filters: FilterCriteria,
+) -> None:
+    """Render side-by-side N-country comparison."""
+    st.header("Country Comparison")
 
-    Args:
-        engine: AnalyticsEngine instance
-        filters: Current filter criteria
-    """
-    st.header("Cross-Country Comparison")
-
-    # Get available countries
-    available_countries = engine.get_unique_values("country")
-
-    if len(available_countries) < 2:
-        st.warning("Need at least 2 countries for comparison.")
+    countries = engine.get_unique_values("country_iso")
+    if len(countries) < 2:
+        st.warning("Need at least two countries.")
         return
 
-    # Country selection
     selected_countries = st.multiselect(
-        "Select Countries to Compare",
-        options=available_countries,
-        default=available_countries[:2],
+        "Countries",
+        options=countries,
+        default=countries[: min(3, len(countries))],
     )
-
     if len(selected_countries) < 2:
-        st.info("Please select at least 2 countries.")
+        st.info("Select at least two countries.")
         return
 
-    # Question selection
-    survey = load_ncdn_v1()
-
-    question_options = {}
-    for section in survey.sections:
-        for question in section.questions:
-            if question.question_type in ["single_select", "boolean", "multi_select"]:
-                label = f"[{section.title}] Q{question.display_number}: {question.prompt[:40]}..."
-                question_options[label] = question
-
-    selected_label = st.selectbox(
-        "Select Question to Compare",
+    questions = engine.get_questions()
+    question_options = {
+        f"{row.question_id} [{row.section_id}] {str(row.question_prompt)[:65]}": row.question_id
+        for row in questions.itertuples()
+    }
+    selected_question_label = st.selectbox(
+        "Question",
         options=list(question_options.keys()),
     )
-    selected_question = question_options[selected_label]
+    question_id = question_options[selected_question_label]
 
-    st.markdown(f"### Comparing: {selected_question.prompt}")
-
-    # Get comparison data
-    comp_df = engine.compare_countries(
-        selected_question.question_id,
-        selected_countries,
-        filters,
+    distribution = engine.get_question_country_distribution(
+        question_id=question_id,
+        countries=selected_countries,
+        filters=filters,
     )
-
-    if comp_df.empty:
-        st.info("No data available for comparison.")
+    if distribution.empty:
+        st.info("No comparable answers for selected filters.")
         return
 
-    # Pivot for side-by-side comparison
-    pivot_df = comp_df.pivot_table(
+    st.subheader("Percentage Matrix")
+    pivot_pct = distribution.pivot_table(
         index="answer_value",
-        columns="country",
-        values="respondent_count",
-        fill_value=0,
-    ).reset_index()
-
-    # Display comparison table
-    st.subheader("Comparison Table")
-    st.dataframe(pivot_df, use_container_width=True)
-
-    # Display side-by-side charts
-    st.subheader("Visual Comparison")
-
-    col1, col2 = st.columns(2)
-
-    for idx, country in enumerate(selected_countries[:2]):
-        country_data = comp_df[comp_df["country"] == country]
-
-        with col1 if idx == 0 else col2:
-            st.markdown(f"**{country}**")
-            render_bar_chart(
-                country_data,
-                x_column="answer_value",
-                y_column="respondent_count",
-                title=f"",
-            )
-
-    # Show differences
-    st.subheader("Key Differences")
-    _show_differences(comp_df, selected_countries)
-
-
-def _show_differences(comp_df: pd.DataFrame, countries: list[str]) -> None:
-    """Show key differences between countries."""
-    if len(countries) != 2:
-        st.caption("Differences analysis available for 2-country comparison only.")
-        return
-
-    # Calculate percentages for each country
-    for country in countries:
-        country_data = comp_df[comp_df["country"] == country]
-        total = country_data["respondent_count"].sum()
-        if total > 0:
-            comp_df.loc[comp_df["country"] == country, "percentage"] = (
-                comp_df[comp_df["country"] == country]["respondent_count"] / total * 100
-            )
-
-    # Find largest difference
-    pivot_pct = comp_df.pivot_table(
-        index="answer_value",
-        columns="country",
+        columns="country_iso",
         values="percentage",
         fill_value=0,
     )
+    st.dataframe(pivot_pct, use_container_width=True)
 
-    if len(pivot_pct.columns) == 2:
-        pivot_pct["difference"] = abs(pivot_pct.iloc[:, 0] - pivot_pct.iloc[:, 1])
-        largest_diff = pivot_pct["difference"].idxmax()
-        diff_value = pivot_pct.loc[largest_diff, "difference"]
+    st.subheader("Counts")
+    render_bar_chart(
+        distribution.sort_values("respondent_count", ascending=False).head(24),
+        x_column="answer_value",
+        y_column="respondent_count",
+        title="Top Answer Counts Across Selected Countries",
+    )
 
-        st.write(
-            f"**Largest difference:** '{largest_diff}' with {diff_value:.1f} percentage points difference"
-        )
+    st.subheader("Largest Differences")
+    deltas = engine.get_country_delta_insights(
+        question_id=question_id,
+        countries=selected_countries,
+        filters=filters,
+        top_n=10,
+    )
+    if deltas.empty:
+        st.caption("No delta insights available for this question.")
+    else:
+        st.dataframe(deltas, use_container_width=True)
 
-        for country in countries:
-            pct = pivot_pct.loc[largest_diff, country]
-            st.write(f"- {country}: {pct:.1f}%")
+
+def _run_standalone() -> None:
+    st.title("📊 MS Survey Analytics Dashboard")
+    context = load_dashboard_context()
+    if context is None:
+        return
+    engine, filters = context
+    try:
+        render_comparison(engine, filters)
+    finally:
+        engine.close()
+
+
+if __name__ == "__main__":
+    _run_standalone()

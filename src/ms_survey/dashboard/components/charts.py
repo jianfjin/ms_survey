@@ -121,3 +121,29 @@ def render_text_responses(df: pd.DataFrame, max_display: int = 10) -> None:
 
     if len(df) > max_display:
         st.caption(f"... and {len(df) - max_display} more responses")
+
+
+def render_heatmap(
+    df: pd.DataFrame,
+    x_column: str,
+    y_column: str,
+    color_column: str,
+    title: str,
+) -> None:
+    """Render a section-country heatmap."""
+    if df.empty:
+        st.info("No data available for this chart.")
+        return
+
+    chart = (
+        alt.Chart(df)
+        .mark_rect()
+        .encode(
+            x=alt.X(x_column, sort=None),
+            y=alt.Y(y_column, sort=None),
+            color=alt.Color(color_column, scale=alt.Scale(scheme="blues")),
+            tooltip=[x_column, y_column, color_column],
+        )
+        .properties(title=title, height=420)
+    )
+    st.altair_chart(chart, use_container_width=True)
