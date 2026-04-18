@@ -10,6 +10,11 @@ from typing import Any
 import duckdb
 import pandas as pd
 
+from ms_survey.analytics.question_profiles import (
+    CanonicalOptionProfile,
+    get_option_profile,
+)
+
 _TOKEN_RE = re.compile(r"[a-zA-Z]{3,}")
 _STOP_WORDS = {
     "the",
@@ -152,6 +157,15 @@ class NormalizedAnalyticsEngine:
         if df.empty:
             return None
         return df.iloc[0].to_dict()
+
+    def get_effective_question_type(self, question_id: str) -> str | None:
+        df = self._load_answers(question_id=question_id)
+        if df.empty:
+            return None
+        counts = df["question_type"].dropna().astype(str).value_counts()
+        if counts.empty:
+            return None
+        return str(counts.index[0])
 
     def get_summary_stats(
         self,
@@ -331,6 +345,90 @@ class NormalizedAnalyticsEngine:
             ["country_iso", "respondent_count"], ascending=[True, False]
         )
 
+    def get_question_answer_summary(
+        self,
+        question_id: str,
+        filters: FilterCriteria | None = None,
+    ) -> pd.DataFrame:
+        columns = [
+            "answer_value",
+            "response_count",
+            "respondent_count",
+            "percentage",
+            "answered_respondent_total",
+        ]
+        df = self._load_answers(filters=filters, question_id=question_id)
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        answered = df[
+            (df["answer_state"] == "answered")
+            & (df["respondent_id"].notna())
+        ].copy()
+        if answered.empty:
+            return pd.DataFrame(columns=columns)
+
+        answered_total = int(answered["respondent_id"].nunique())
+        if answered_total == 0:
+            return pd.DataFrame(columns=columns)
+
+        profile = get_option_profile(question_id)
+        question_type = str(df.iloc[0]["question_type"])
+
+        if question_type in {"multi_select", "ranking"}:
+            items = self._load_answer_items(filters=filters, question_id=question_id)
+            if items.empty:
+                return pd.DataFrame(columns=columns)
+            working = items.copy()
+            working["answer_value"] = (
+                working["item_value"].fillna("").astype(str).str.strip()
+            )
+            working = working[working["answer_value"] != ""]
+            if working.empty:
+                return pd.DataFrame(columns=columns)
+            working["answer_value"] = self._canonicalize_answers(
+                working["answer_value"], profile
+            )
+            grouped = (
+                working.groupby("answer_value", dropna=False)
+                .agg(
+                    response_count=("respondent_id", "size"),
+                    respondent_count=("respondent_id", "nunique"),
+                )
+                .reset_index()
+            )
+        else:
+            working = answered.copy()
+            working["answer_value"] = (
+                working["answer_value_masked"].fillna("").astype(str).str.strip()
+            )
+            working = working[working["answer_value"] != ""]
+            if working.empty:
+                return pd.DataFrame(columns=columns)
+            working["answer_value"] = self._canonicalize_answers(
+                working["answer_value"], profile
+            )
+            grouped = (
+                working.groupby("answer_value", dropna=False)
+                .agg(
+                    response_count=("respondent_id", "size"),
+                    respondent_count=("respondent_id", "nunique"),
+                )
+                .reset_index()
+            )
+
+        if grouped.empty:
+            return pd.DataFrame(columns=columns)
+
+        grouped["response_count"] = grouped["response_count"].astype(int)
+        grouped["respondent_count"] = grouped["respondent_count"].astype(int)
+        grouped = self._apply_profile_order(grouped, profile)
+        grouped["percentage"] = grouped["response_count"].apply(
+            lambda value: round((value / answered_total) * 100, 2)
+        )
+        grouped["answered_respondent_total"] = answered_total
+        return grouped[columns]
+
     def get_country_delta_insights(
         self,
         question_id: str,
@@ -372,7 +470,7 @@ class NormalizedAnalyticsEngine:
         self,
         question_id: str,
         filters: FilterCriteria | None = None,
-        limit: int = 100,
+        limit: int | None = None,
     ) -> pd.DataFrame:
         df = self._load_answers(filters=filters, question_id=question_id)
         if df.empty:
@@ -384,6 +482,8 @@ class NormalizedAnalyticsEngine:
             & (df["answer_value_masked"].astype(str).str.strip() != "")
         ][["respondent_id", "country_iso", "role", "answer_value_masked"]].copy()
         text_df = text_df.rename(columns={"answer_value_masked": "text_response"})
+        if limit is None:
+            return text_df
         return text_df.head(limit)
 
     def get_text_theme_summary(
@@ -467,6 +567,74 @@ class NormalizedAnalyticsEngine:
             sql += " WHERE " + " AND ".join(conditions)
 
         return self.con.execute(sql).fetchdf()
+
+    def _canonicalize_answers(
+        self,
+        series: pd.Series,
+        profile: CanonicalOptionProfile | None,
+    ) -> pd.Series:
+        if profile is None:
+            return series
+        return series.astype(str).map(profile.canonicalize)
+
+    def _apply_profile_order(
+        self,
+        grouped: pd.DataFrame,
+        profile: CanonicalOptionProfile | None,
+    ) -> pd.DataFrame:
+        merged = (
+            grouped.groupby("answer_value", dropna=False)[
+                ["response_count", "respondent_count"]
+            ]
+            .sum()
+            .reset_index()
+        )
+        if profile is None:
+            return merged.sort_values(
+                ["response_count", "answer_value"],
+                ascending=[False, True],
+            ).reset_index(drop=True)
+
+        value_map = {
+            str(row.answer_value): (
+                int(row.response_count),
+                int(row.respondent_count),
+            )
+            for row in merged.itertuples()
+        }
+        rows: list[dict[str, Any]] = []
+        for label in profile.canonical_order:
+            response_count, respondent_count = value_map.pop(label, (0, 0))
+            if label != profile.other_label and response_count == 0:
+                continue
+            rows.append(
+                {
+                    "answer_value": label,
+                    "response_count": response_count,
+                    "respondent_count": respondent_count,
+                }
+            )
+
+        if value_map:
+            other_response = sum(value for value, _ in value_map.values())
+            other_respondents = sum(value for _, value in value_map.values())
+            rows.append(
+                {
+                    "answer_value": profile.other_label,
+                    "response_count": other_response,
+                    "respondent_count": other_respondents,
+                }
+            )
+
+        ordered = pd.DataFrame(rows)
+        if ordered.empty:
+            return ordered
+
+        order_map = {label: idx for idx, label in enumerate(profile.canonical_order)}
+        ordered["__order"] = ordered["answer_value"].map(order_map).fillna(
+            len(order_map) + 1
+        )
+        return ordered.sort_values("__order").drop(columns=["__order"]).reset_index(drop=True)
 
     def _load_answer_items(
         self,

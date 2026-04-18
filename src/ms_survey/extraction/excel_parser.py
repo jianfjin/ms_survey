@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -101,6 +102,7 @@ def parse_excel_workbook(path: str | Path) -> ParsedWorkbook:
     respondent_rows: list[dict[str, str]] = []
     answer_rows: list[dict[str, str | int]] = []
     question_rows: list[dict[str, str | int]] = []
+    observed_type_counts: dict[str, Counter[str]] = {}
 
     question_columns = _get_question_columns(raw_df.columns)
     question_map: dict[str, dict[str, str | int]] = {}
@@ -116,6 +118,7 @@ def parse_excel_workbook(path: str | Path) -> ParsedWorkbook:
             "question_order": idx,
             "question_type": question_type,
         }
+        observed_type_counts[question_id] = Counter()
         question_rows.append(
             {
                 "question_id": question_id,
@@ -159,6 +162,7 @@ def parse_excel_workbook(path: str | Path) -> ParsedWorkbook:
                     question_type = "multi_select"
                 elif raw_value.lower() in {"yes", "no", "true", "false"}:
                     question_type = "boolean"
+                observed_type_counts[str(question_info["question_id"])][question_type] += 1
 
             answer_rows.append(
                 {
@@ -178,9 +182,23 @@ def parse_excel_workbook(path: str | Path) -> ParsedWorkbook:
                 }
             )
 
+    resolved_question_types: dict[str, str] = {}
+    for row in question_rows:
+        question_id = str(row["question_id"])
+        resolved = _resolve_question_type(
+            default_type=str(row["question_type"]),
+            observed_counts=observed_type_counts.get(question_id, Counter()),
+        )
+        row["question_type"] = resolved
+        resolved_question_types[question_id] = resolved
+
     respondents = pd.DataFrame(respondent_rows)
     questions = pd.DataFrame(question_rows)
     answers = pd.DataFrame(answer_rows)
+    if not answers.empty:
+        answers["question_type"] = answers["question_id"].map(resolved_question_types).fillna(
+            answers["question_type"]
+        )
 
     if not answers.empty:
         answers = answers.sort_values(
@@ -406,6 +424,38 @@ def _infer_question_type(prompt: str, value: str) -> str:
         return "text"
 
     return "text"
+
+
+def _resolve_question_type(default_type: str, observed_counts: Counter[str]) -> str:
+    if default_type == "ranking":
+        return "ranking"
+    if not observed_counts:
+        return default_type
+
+    ranking_count = observed_counts.get("ranking", 0)
+    multi_select_count = observed_counts.get("multi_select", 0)
+    boolean_count = observed_counts.get("boolean", 0)
+    single_select_count = observed_counts.get("single_select", 0)
+    text_count = observed_counts.get("text", 0)
+
+    if ranking_count > 0:
+        return "ranking"
+
+    if multi_select_count >= 3 and multi_select_count >= max(
+        text_count, boolean_count, single_select_count
+    ):
+        return "multi_select"
+
+    if boolean_count >= 3 and boolean_count >= max(text_count, single_select_count):
+        return "boolean"
+
+    if single_select_count >= 3 and single_select_count >= text_count:
+        return "single_select"
+
+    if default_type != "text":
+        return default_type
+
+    return observed_counts.most_common(1)[0][0]
 
 
 def _infer_section_id(prompt: str) -> str:
