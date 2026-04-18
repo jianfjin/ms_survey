@@ -54,11 +54,14 @@ Use each page for a specific analysis goal:
    - Bar chart (`Countries Answered per Question`) quickly surfaces weakest questions in that section.
 
 3. `Question View`
-   - Select one question to inspect answer patterns country by country.
-   - `Country Comparison Table` is a percentage matrix (`answer_value x country_iso`).
-   - `Top Answers by Country` shows highest-volume answers.
+   - Select one question to inspect distribution and semantics.
+   - Structured questions use a Highcharts-inspired dual-axis chart:
+     - primary metric: `response_count` (one count per observed answer option response)
+     - secondary view: percentage against answered respondents for that question
+   - `Answer Summary Table` shows `answer_value`, `response_count`, `respondent_count`, and `%`.
    - For text questions, review:
-     - `Masked Theme Summary` (top token frequencies)
+     - `Masked Theme Cloud` (word-cloud style weighted token view)
+     - `Masked Theme Summary` (top token frequencies table)
      - `Masked Text Samples` (privacy-masked excerpts only)
 
 4. `Country Comparison`
@@ -85,6 +88,11 @@ This command generates one distributable file:
 - `dist/dashboard.html`
 
 End users can open that file directly in a browser without installing Python, running Streamlit, or internet access.
+
+Static `Question Analysis` parity with Streamlit is included in the exported HTML:
+- Structured questions use `response_count`-based summaries with Highcharts-inspired dual-axis styling.
+- Three alternative biomedical chart modes are available per question: `Horizontal Bar`, `Lollipop`, and `Gradient + Average`.
+- Text questions include word-cloud style theme visualization, charted theme distributions, and all masked text responses for active filters.
 
 ### Privacy behavior
 

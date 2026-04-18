@@ -62,3 +62,32 @@ def test_country_delta_insights_returns_delta_rows(
         delta.columns
     )
 
+
+def test_question_answer_summary_matches_q004_benchmark_counts(
+    normalized_engine: NormalizedAnalyticsEngine,
+) -> None:
+    assert normalized_engine.get_effective_question_type("q_004") == "multi_select"
+
+    summary = normalized_engine.get_question_answer_summary("q_004")
+    assert {
+        "answer_value",
+        "response_count",
+        "respondent_count",
+        "percentage",
+        "answered_respondent_total",
+    }.issubset(summary.columns)
+
+    expected = {
+        "Research data": 17,
+        "Registry data": 17,
+        "Biobank data": 17,
+        "Imaging data": 17,
+        "Clinical data": 16,
+        "Genetic data": 16,
+        "Other": 9,
+    }
+    count_map = {
+        str(row.answer_value): int(row.response_count) for row in summary.itertuples()
+    }
+    assert count_map == expected
+    assert int(summary["answered_respondent_total"].iloc[0]) == 17

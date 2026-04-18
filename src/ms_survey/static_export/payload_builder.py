@@ -10,6 +10,8 @@ from typing import Any
 
 import pandas as pd
 
+from ms_survey.analytics.question_profiles import get_option_profile
+
 _RESPONDENTS_FILE = "respondents.parquet"
 _QUESTIONS_FILE = "questions.parquet"
 _ANSWERS_FILE = "answers.parquet"
@@ -128,6 +130,7 @@ def _build_derived_views(
     return {
         "section_heatmap": section_heatmap,
         "question_stats": question_stats,
+        "question_option_profiles": _build_question_option_profiles(questions),
         "countries": country_list,
         "section_ids": (
             sorted(questions["section_id"].dropna().unique().tolist())
@@ -175,3 +178,29 @@ def _derive_question_stats(answers: pd.DataFrame) -> list[dict[str, Any]]:
         axis=1,
     )
     return grouped.to_dict(orient="records")
+
+
+def _build_question_option_profiles(
+    questions: pd.DataFrame,
+) -> dict[str, dict[str, Any]]:
+    if "question_id" not in questions:
+        return {}
+
+    question_ids = sorted(
+        {
+            str(value).strip()
+            for value in questions["question_id"].dropna().tolist()
+            if str(value).strip()
+        }
+    )
+    profiles: dict[str, dict[str, Any]] = {}
+    for question_id in question_ids:
+        profile = get_option_profile(question_id)
+        if profile is None:
+            continue
+        profiles[question_id] = {
+            "canonical_order": list(profile.canonical_order),
+            "alias_map": dict(profile.alias_map),
+            "other_label": profile.other_label,
+        }
+    return profiles

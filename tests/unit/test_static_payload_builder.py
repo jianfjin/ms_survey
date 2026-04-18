@@ -103,3 +103,20 @@ def test_serialize_payload_reports_size_warning_for_large_payload(
     assert report["warnings"]
     assert report["size_bytes"] > 512
 
+
+def test_payload_includes_canonical_question_profiles(sample_dataset_dir: Path) -> None:
+    payload = build_dashboard_payload(sample_dataset_dir)
+    profiles = payload["derived"]["question_option_profiles"]
+
+    assert "q_004" in profiles
+    assert profiles["q_004"]["canonical_order"] == [
+        "Research data",
+        "Registry data",
+        "Biobank data",
+        "Imaging data",
+        "Clinical data",
+        "Genetic data",
+        "Other",
+    ]
+    assert profiles["q_004"]["other_label"] == "Other"
+    assert profiles["q_004"]["alias_map"]["research data"] == "Research data"

@@ -26,3 +26,9 @@ def test_parse_excel_builds_iso_country_and_questions() -> None:
     assert "question_id" in parsed.questions.columns
     assert not parsed.answers.empty
 
+
+def test_q004_is_typed_as_multi_select() -> None:
+    parsed = parse_excel_workbook(_excel_path())
+    q004 = parsed.questions[parsed.questions["question_id"] == "q_004"]
+    assert not q004.empty
+    assert q004.iloc[0]["question_type"] == "multi_select"

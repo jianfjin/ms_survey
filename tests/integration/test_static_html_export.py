@@ -24,4 +24,8 @@ def test_normalized_dataset_exports_static_html(tmp_path: Path) -> None:
     assert "<!doctype html>" in html.lower()
     assert "window.__DATA_B64_GZ__" in html
     assert "<main id=\"app-root\"" in html
+    assert "CHART_MODES" in html
+    assert "Alternative Biomedical Chart Views" in html
+    assert "Masked Text Responses" in html
+    assert "question_option_profiles" in html
     assert report["size_bytes"] > 0

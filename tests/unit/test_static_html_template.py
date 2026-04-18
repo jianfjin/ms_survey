@@ -20,10 +20,14 @@ def test_client_js_contains_required_functions() -> None:
     assert "function applyFilters(" in js
     assert "function computeSectionHeatmap(" in js
     assert "function computeQuestionDistribution(" in js
+    assert "rStructuredDualAxisChart" in js
+    assert "CHART_MODES" in js
+    assert "getMaskedTextResponses" in js
+    assert "question_option_profiles" in js
 
 
 def test_template_includes_focus_and_reduced_motion_rules() -> None:
     css = build_css_tokens_and_layout()
     assert ":focus-visible" in css
     assert "@media(prefers-reduced-motion:reduce)" in css
-
+    assert "font-family:Arial,Helvetica,sans-serif" in css
